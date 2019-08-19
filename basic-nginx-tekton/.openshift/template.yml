@@ -1,0 +1,158 @@
+apiVersion: v1
+kind: Template
+labels:
+  template: generic-nginx-pipeline
+metadata:
+  annotations:
+    description: Application template for nginx applications built using a Jenkins Pipeline
+    iconClass: icon-nginx
+    tags: nginx,xpaas,jenkins-ci
+    version: 1.2.0
+  name: generic-nginx-jenkins-pipeline
+objects:
+- apiVersion: tekton.dev/v1alpha1
+  kind: PipelineResource
+  metadata:
+    name: nginx-git
+  spec:
+    params:
+    - name: url
+      value: ${SOURCE_CODE_URL}
+    - name: revision
+      value: ${SOURCE_CODE_REF}
+    type: git
+- apiVersion: tekton.dev/v1alpha1
+  kind: Task
+  metadata:
+    name: build
+  spec:
+    inputs:
+      params:
+      - default: help
+        description: List of commands to run
+        name: CMDS
+      resources:
+      - name: source
+        targetPath: ""
+        type: git
+    steps:
+    - args:
+      - ${inputs.params.CMDS}
+      command:
+      - /bin/sh
+      - -c
+      image: registry.access.redhat.com/ubi7/ubi:latest
+      name: build
+      resources: {}
+- kind: Task
+  metadata:
+    name: binary-build
+  spec:
+    inputs:
+      params:
+      - name: ARGS
+        description: The OpenShift CLI arguments to run
+        default: help
+      - name: CMDS
+        description: Build commands
+        default: "echo 'hello world'"
+      resources:
+      - name: source
+        targetPath: ""
+        type: git
+    steps:
+    - name: build
+      image: registry.access.redhat.com/ubi7/ubi:latest
+      command:
+      - /bin/sh
+      - -c
+      args:
+      - "${inputs.params.CMDS}"
+      volumeMounts:
+      - name: cache
+        mountPath: /cache
+    - name: oc-build
+      image: quay.io/openshift-pipeline/openshift-cli:latest
+      command: ["/usr/local/bin/oc"]
+      args:
+      - "${inputs.params.ARGS}"
+      volumeMounts:
+      - name: cache
+        mountPath: /build
+    volumes:
+    - name: cache
+      emptyDir: {}
+- apiVersion: tekton.dev/v1alpha1
+  kind: Task
+  metadata:
+    name: verify-deploy
+  spec:
+    inputs:
+      params:
+      - name: APP_NAME
+        description: The OpenShift CLI arguments to run
+        default: help
+      - name: TIMEOUT
+        description: The length of time (seconds) to wait for deployment to come online
+        value: "60"
+      timeout: ${inputs.params.TIMEOUT}s
+    steps:
+    - name: oc-verify
+      image: quay.io/openshift-pipeline/openshift-cli:latest
+      command:
+      - /bin/sh
+      - -c
+      args:
+      - "DCOBJ=$(oc get dc ${inputs.params.APP_NAME} -o jsonpath='{.status.latestVersion}');echo \"Looking for ${inputs.params.APP_NAME}\"; echo \"Latest version is $DCOBJ\";echo \"deployment=${inputs.params.APP_NAME}-$DCOBJ\";while true; do OUT=$(oc get pods -l \"deployment=${inputs.params.APP_NAME}-$DCOBJ\" -o jsonpath='{.items[0].status.containerStatuses[*].waiting}');if [ -z $OUT ];then echo \"${inputs.params.APP_NAME} is running\";exit 0; else echo \"${inputs.params.APP_NAME} has not started\";fi;done"
+- apiVersion: tekton.dev/v1alpha1
+  kind: Pipeline
+  metadata:
+    name: nginx-deploy-pipeline
+  spec:
+    resources:
+    - name: app-git
+      type: git
+    tasks:
+    - name: local-build
+      params:
+      - name: CMDS
+        value: cd /workspace/source && pwd && ls -la && cd basic-nginx && mkdir build && cp index.html build/index.html && cp nginx.conf build/nginx.conf && echo hello && cp -R . /cache && ls /cache && echo hello
+      resources:
+        inputs:
+        - name: source
+          resource: app-git
+      taskRef:
+        name: build
+    - name: binary-build
+      params:
+      - name: CMDS
+        value: cd /workspace/source && pwd && ls -la && cd basic-nginx && mkdir build && cp index.html build/index.html && cp nginx.conf build/nginx.conf && echo hello && cp -R . /cache && ls /cache && echo hello
+      - name: ARGS
+        value: start-build basic-nginx --from-dir=/build/build --wait
+      resources:
+        inputs:
+        - name: source
+          resource: app-git
+      taskRef:
+        name: binary-build
+      runAfter:
+      - local-build
+    - name: verify-deploy
+      retries: 5
+      params:
+      - name: APP_NAME
+        value: basic-nginx
+      - name: TIMEOUT
+        value: "60"
+      taskRef:
+        name: verify-deploy
+      runAfter:
+      - binary-build
+parameters:
+- description: The name for the application.
+  name: APP_NAME
+  required: true
+- name: SOURCE_CODE_URL
+- name: SOURCE_CODE_REF
+- name: BUILD_IMAGE
+- name: BASE_IMAGE

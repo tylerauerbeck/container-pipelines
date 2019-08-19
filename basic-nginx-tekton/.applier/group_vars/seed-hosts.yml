@@ -1,0 +1,59 @@
+app_name: basic-nginx
+source_code_url: https://github.com/redhat-cop/container-pipelines.git
+source_code_ref: master
+
+ci_cd:
+  NAMESPACE: "{{ app_name }}-ci-cd"
+  NAMESPACE_DESCRIPTION: "{{ app_name }} CI/CD"
+  NAMESPACE_DISPLAY_NAME: "{{ app_name }} CI/CD"
+
+dev:
+  NAMESPACE: "{{ app_name }}-dev"
+  NAMESPACE_DESCRIPTION: "{{ app_name }} Dev"
+  NAMESPACE_DISPLAY_NAME: "{{ app_name }} Dev"
+
+test:
+  NAMESPACE: "{{ app_name }}-test"
+  NAMESPACE_DESCRIPTION: "{{ app_name }} Test"
+  NAMESPACE_DISPLAY_NAME: "{{ app_name }} Test"
+
+prod:
+  NAMESPACE: "{{ app_name }}-prod"
+  NAMESPACE_DESCRIPTION: "{{ app_name }} Prod"
+  NAMESPACE_DISPLAY_NAME: "{{ app_name }} Prod"
+
+# - name: jenkins
+#    template: "{{ inventory_dir }}/../.openshift/builds/template.yml"
+#    params: "{{ inventory_dir }}/../.openshift/builds/params"
+#    params_from_vars:
+#      SOURCE_REPOSITORY_URL: "{{ source_code_url }}"
+#      SOURCE_REPOSITORY_REF: "{{ source_code_ref }}"
+
+openshift_cluster_content:
+- object: projectrequest
+  content:
+  - name: basic-nginx-cicd
+    template: "https://raw.githubusercontent.com/redhat-cop/openshift-templates/v1.4.12/project-requests/create-project.yml"
+    params_from_vars: "{{ ci_cd }}"
+    action: create
+    tags:
+    - projects
+  - name: basic-nginx-dev
+    template: "https://raw.githubusercontent.com/redhat-cop/openshift-templates/v1.4.12/project-requests/create-project.yml"
+    params_from_vars: "{{ dev }}"
+    action: create
+    tags:
+    - projects
+  - name: basic-nginx-test
+    template: "https://raw.githubusercontent.com/redhat-cop/openshift-templates/v1.4.12/project-requests/create-project.yml"
+    params_from_vars: "{{ test }}"
+    action: create
+    tags:
+    - projects
+  - name: basic-nginx-prod
+    template: "https://raw.githubusercontent.com/redhat-cop/openshift-templates/v1.4.12/project-requests/create-project.yml"
+    params_from_vars: "{{ prod }}"
+    action: create
+    tags:
+    - projects
+- object: deployments
